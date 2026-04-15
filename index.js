@@ -101,6 +101,6 @@ app.get("/file/:id", (req, res) => {
   });
 });
 
-app.listen(3001, () =>
+app.listen(3000, () =>
   console.log("Server running on http://localhost:3001")
 );
