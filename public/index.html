@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <meta charset="UTF-8">
   <title>Video Downloader</title>
@@ -28,6 +29,7 @@
       margin-bottom: 10px;
       border-radius: 5px;
       border: none;
+      box-sizing: border-box;
     }
 
     button {
@@ -37,6 +39,11 @@
       color: white;
       border-radius: 5px;
       cursor: pointer;
+    }
+
+    button:disabled {
+      background: #555;
+      cursor: not-allowed;
     }
 
     .progress {
@@ -55,15 +62,16 @@
       height: 100%;
       width: 0%;
       background: #4CAF50;
+      transition: width 0.3s;
     }
   </style>
 </head>
+
 <body>
   <div class="box">
     <h2>Video Downloader</h2>
     <input id="url" placeholder="Video URL">
-    <button onclick="startDownload()">Download</button>
-
+    <button id="btn" onclick="startDownload()">Download</button>
     <div class="progress">
       <div class="bar">
         <div class="bar-inner" id="bar"></div>
@@ -71,40 +79,73 @@
       <p id="status">Bekliyor...</p>
     </div>
   </div>
+  <script>
+    let downloadId = null;
 
-<script>
-let downloadId = null;
+    function startDownload() {
+      const url = document.getElementById("url").value.trim();
+      if (!url) return;
 
-function startDownload() {
-  const url = document.getElementById("url").value;
+      document.getElementById("btn").disabled = true;
+      document.getElementById("status").innerText = "Başlatılıyor...";
+      document.getElementById("bar").style.width = "0%";
 
-  fetch(`http://localhost:3001/download?url=${url}`)
-    .then(res => res.json())
-    .then(data => {
-      downloadId = data.id;
-      checkProgress();
-    });
-}
+      // ✅ localhost yerine relative URL
+      fetch(`/download?url=${encodeURIComponent(url)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) {
+            document.getElementById("status").innerText = "Hata: " + data.error;
+            document.getElementById("btn").disabled = false;
+            return;
+          }
+          downloadId = data.id;
+          checkProgress();
+        })
+        .catch(() => {
+          document.getElementById("status").innerText = "Sunucuya bağlanılamadı.";
+          document.getElementById("btn").disabled = false;
+        });
+    }
 
-function checkProgress() {
-  const interval = setInterval(() => {
-    fetch(`http://localhost:3001/progress/${downloadId}`)
-      .then(res => res.json())
-      .then(data => {
-        if (!data) return;
+    function checkProgress() {
+      const interval = setInterval(() => {
+        fetch(`/progress/${downloadId}`)
+          .then(res => res.json())
+          .then(data => {
+            if (!data || !data.status) return;
 
-        document.getElementById("bar").style.width = data.progress + "%";
-        document.getElementById("status").innerText =
-          data.progress + "% | " + data.speed + " | ETA: " + data.eta;
+            document.getElementById("bar").style.width = data.progress + "%";
 
-        if (data.status === "finished") {
-          clearInterval(interval);
-          window.location = `http://localhost:3001/file/${downloadId}`;
-        }
-      });
-  }, 1000);
-}
-</script>
+            if (data.status === "error") {
+              clearInterval(interval);
+              document.getElementById("status").innerText = "İndirme başarısız.";
+              document.getElementById("btn").disabled = false;
+              return;
+            }
 
+            if (data.status === "finished") {
+              clearInterval(interval);
+              document.getElementById("bar").style.width = "100%";
+              document.getElementById("status").innerText = "Tamamlandı! İndiriliyor...";
+              document.getElementById("btn").disabled = false;
+              // ✅ relative URL
+              window.location = `/file/${downloadId}`;
+              return;
+            }
+
+            // İndirme devam ediyor
+            document.getElementById("status").innerText =
+              `${data.progress}% | ${data.speed} | ETA: ${data.eta}`;
+          })
+          .catch(() => {
+            clearInterval(interval);
+            document.getElementById("status").innerText = "Bağlantı kesildi.";
+            document.getElementById("btn").disabled = false;
+          });
+      }, 1000);
+    }
+  </script>
 </body>
+
 </html>
