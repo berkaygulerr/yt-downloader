@@ -10,6 +10,8 @@ const downloads = {};
 const downloadFolder = path.join(__dirname, "downloads");
 if (!fs.existsSync(downloadFolder)) fs.mkdirSync(downloadFolder);
 
+const PORT = process.env.PORT || 3000;
+
 // Dosya adı güvenli hale getirme
 function sanitizeFilename(name) {
   return name
@@ -101,6 +103,6 @@ app.get("/file/:id", (req, res) => {
   });
 });
 
-app.listen(3000, () =>
-  console.log("Server running on http://localhost:3001")
+app.listen(PORT, "0.0.0.0", () =>
+  console.log(`Server running on port ${PORT}`)
 );
