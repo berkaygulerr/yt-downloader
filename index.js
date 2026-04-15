@@ -10,7 +10,7 @@ const downloads = {};
 const downloadFolder = path.join(__dirname, "downloads");
 if (!fs.existsSync(downloadFolder)) fs.mkdirSync(downloadFolder);
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 // Dosya adı güvenli hale getirme
 function sanitizeFilename(name) {
