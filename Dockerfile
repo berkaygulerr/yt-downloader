@@ -1,8 +1,11 @@
-FROM node:20-alpine
+FROM node:20-slim
 
 WORKDIR /app
 
-RUN apk add --no-cache yt-dlp ffmpeg
+RUN apt-get update && apt-get install -y \
+    yt-dlp \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
 RUN npm install
