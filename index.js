@@ -13,7 +13,7 @@ if (!fs.existsSync(downloadFolder)) {
   fs.mkdirSync(downloadFolder, { recursive: true });
 }
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 // DOWNLOAD BAŞLAT
 app.get("/download", (req, res) => {
