@@ -1,19 +1,24 @@
 const express = require("express");
-const { spawn } = require("child_process");
+const { spawn, execFile } = require("child_process");
 const fs = require("fs");
 const path = require("path");
-
 const app = express();
 app.use(express.static("public"));
-
 const downloads = {};
-
 const downloadFolder = path.join(__dirname, "downloads");
 if (!fs.existsSync(downloadFolder)) {
   fs.mkdirSync(downloadFolder, { recursive: true });
 }
-
 const PORT = process.env.PORT || 3001;
+
+// Dosya adı güvenli hale getir
+function sanitizeFilename(name) {
+  return name
+    .replace(/[\/\\:*?"<>|]/g, "_")  // Windows/Linux yasak karakterler
+    .replace(/\s+/g, " ")
+    .trim()
+    .substring(0, 200); // çok uzun isim olmasın
+}
 
 // DOWNLOAD BAŞLAT
 app.get("/download", (req, res) => {
@@ -22,84 +27,86 @@ app.get("/download", (req, res) => {
 
   const id = Date.now().toString();
 
-  const filePath = path.join(downloadFolder, `${id}.mp4`);
-
   downloads[id] = {
     progress: 0,
     speed: "",
     eta: "",
-    status: "downloading"
+    status: "fetching_title"
   };
 
-  // 🔥 DIRECT DOWNLOAD (TITLE YOK → YOUTUBE BLOCK YOK)
-  const ytdlp = spawn("yt-dlp", [
-    "-f",
-    "bv*[vcodec^=avc1][height<=1080]+ba[ext=m4a]/best",
-    "--merge-output-format",
-    "mp4",
-    "--newline",
-    "--force-ipv4",
-    "--no-part",
-    "-o",
-    filePath,
-    url
-  ]);
+  // Önce title'ı al
+  execFile("yt-dlp", ["--get-title", "--no-playlist", url], (err, stdout) => {
+    let title = stdout ? stdout.trim() : null;
 
-  ytdlp.stdout.on("data", (data) => {
-    const line = data.toString();
-
-    // progress parse
-    const match = line.match(/(\d+\.\d+)%.*?at\s+([^\s]+).*?ETA\s+([^\s]+)/);
-    if (match) {
-      downloads[id].progress = parseFloat(match[1]);
-      downloads[id].speed = match[2];
-      downloads[id].eta = match[3];
+    if (err || !title) {
+      title = id; // fallback: id ile devam et
     }
 
-    console.log(line);
-  });
+    const safeTitle = sanitizeFilename(title);
+    const filename = `${safeTitle}.mp4`;
+    const filePath = path.join(downloadFolder, filename);
 
-  ytdlp.stderr.on("data", (data) => {
-    console.error(data.toString());
-  });
+    downloads[id].status = "downloading";
+    downloads[id].filename = filename;
 
-  ytdlp.on("error", (err) => {
-    console.error("spawn error:", err);
-    downloads[id].status = "error";
-  });
+    const ytdlp = spawn("yt-dlp", [
+      "-f", "bv*[vcodec^=avc1][height<=1080]+ba[ext=m4a]/best",
+      "--merge-output-format", "mp4",
+      "--newline",
+      "--force-ipv4",
+      "--no-part",
+      "-o", filePath,
+      url
+    ]);
 
-  ytdlp.on("close", () => {
-    downloads[id].status = "finished";
-    downloads[id].file = `${id}.mp4`;
-    console.log("Download finished:", filePath);
-  });
+    ytdlp.stdout.on("data", (data) => {
+      const line = data.toString();
+      const match = line.match(/(\d+\.\d+)%.*?at\s+([^\s]+).*?ETA\s+([^\s]+)/);
+      if (match) {
+        downloads[id].progress = parseFloat(match[1]);
+        downloads[id].speed = match[2];
+        downloads[id].eta = match[3];
+      }
+      console.log(line);
+    });
 
-  res.json({ id, filename: `${id}.mp4` });
+    ytdlp.stderr.on("data", (data) => console.error(data.toString()));
+
+    ytdlp.on("error", (err) => {
+      console.error("spawn error:", err);
+      downloads[id].status = "error";
+    });
+
+    ytdlp.on("close", () => {
+      downloads[id].status = "finished";
+      downloads[id].file = filename;
+      console.log("Download finished:", filePath);
+    });
+
+    // Title fetch biter bitmez frontend'e id ve tahmini ismi dön
+    res.json({ id, filename });
+  });
 });
 
 // PROGRESS
 app.get("/progress/:id", (req, res) => {
-  const id = req.params.id;
-  res.json(downloads[id] || {});
+  res.json(downloads[req.params.id] || {});
 });
 
 // FILE DOWNLOAD + DELETE
 app.get("/file/:id", (req, res) => {
   const download = downloads[req.params.id];
-
   if (!download || !download.file) {
     return res.status(404).json({ error: "Dosya yok" });
   }
 
   const file = path.join(downloadFolder, download.file);
-
   if (!fs.existsSync(file)) {
     return res.status(404).json({ error: "Dosya bulunamadı" });
   }
 
-  res.download(file, (err) => {
+  res.download(file, download.file, (err) => {
     if (err) console.error(err);
-
     fs.unlink(file, (err) => {
       if (err) console.error("delete error:", err);
       else console.log("deleted:", file);
@@ -107,7 +114,6 @@ app.get("/file/:id", (req, res) => {
   });
 });
 
-// START SERVER
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on ${PORT}`);
 });
